@@ -3,6 +3,7 @@ import { MessageCircle, X, Send, Loader2, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "../backend/supabaseClient";
+import { useAuth } from "../context/AuthContext";
 
 const ChatBot = () => {
   const [open, setOpen] = useState(false);
@@ -11,23 +12,58 @@ const ChatBot = () => {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef(null);
 
-  // Fetch initial messages from Supabase
+  const { user } = useAuth();
+
+  // Helper to ensure we have a session id for anonymous users
+  const getChatSessionId = () => {
+    let sid = localStorage.getItem("chat_session_id");
+    if (!sid) {
+      try {
+        sid = crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      } catch (e) {
+        sid = `${Date.now()}-${Math.random()}`;
+      }
+      localStorage.setItem("chat_session_id", sid);
+    }
+    return sid;
+  };
+
+  const sessionId = getChatSessionId();
+
+  // Fetch initial messages from Supabase for the current user/session only
   useEffect(() => {
     const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .order('created_at', { ascending: true });
+      try {
+        // Strict check: don't fetch anything if we don't have a way to identify the user/session
+        if (!user?.id && !sessionId) {
+          console.warn('No user_id or session_id found. Skipping fetch.');
+          return;
+        }
 
-      if (data && !error) {
-        setMessages(data);
+        // Fetch identifying only relevant messages
+        let query = supabase.from('messages').select('*').order('created_at', { ascending: true });
+
+        if (user && user.id) {
+          query = query.eq('user_id', user.id);
+        } else if (sessionId) {
+          query = query.eq('session_id', sessionId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        if (data) {
+          setMessages(data);
+        }
+      } catch (err) {
+        console.error('Error fetching messages:', err);
       }
     };
 
     if (open) {
       fetchMessages();
     }
-  }, [open]);
+  }, [open, user, sessionId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -35,27 +71,48 @@ const ChatBot = () => {
 
   const saveMessage = async (msg) => {
     try {
-      await supabase.from('messages').insert([msg]);
+      if (!user?.id && !sessionId) {
+        console.error("Cannot save message: No user_id or session_id available.");
+        return;
+      }
+
+      const payload = {
+        ...msg,
+        user_id: user?.id || null,
+        session_id: sessionId || null,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from('messages').insert([payload]);
+      if (error) throw error;
     } catch (error) {
-      console.error("Error saving to Supabase:", error);
+      console.error("Error saving message:", error);
     }
   };
 
   const handleClearChat = async () => {
-    if (window.confirm("Are you sure you want to clear the entire chat history?")) {
+    if (window.confirm("Are you sure you want to clear your chat history?")) {
       try {
-        const { error } = await supabase
-          .from('messages')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000'); // Standard way to delete all in Supabase
+        let query = supabase.from('messages').delete();
+
+        if (user && user.id) {
+          query = query.eq('user_id', user.id);
+        } else if (sessionId) {
+          query = query.eq('session_id', sessionId);
+        } else {
+          return;
+        }
+
+        const { error } = await query;
 
         if (!error) {
           setMessages([]);
         } else {
-          console.error("Error clearing context:", error);
+          console.error("Error clearing messages:", error);
+          alert(`Failed to clear chat: ${error.message || 'Unknown error'}`);
         }
       } catch (error) {
-        console.error("Catch error clearing messages:", error);
+        console.error("Critical error in handleClearChat:", error);
       }
     }
   };
