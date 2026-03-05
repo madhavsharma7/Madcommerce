@@ -4,6 +4,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "../backend/supabaseClient";
 import { useAuth } from "../context/AuthContext";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize Gemini API
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 const ChatBot = () => {
   const [open, setOpen] = useState(false);
@@ -129,30 +134,90 @@ const ChatBot = () => {
     // Persist user message
     await saveMessage(userMsg);
 
-    // Simulate network delay for realistic experience
-    setTimeout(async () => {
-      let response = "I'm sorry, I didn't quite catch that. Could you please rephrase?";
+    // Hardcoded logic
+    const lowerText = text.toLowerCase();
+    let hardcodedResponse = null;
 
-      const lowerText = text.toLowerCase();
-      if (lowerText.includes("hi") || lowerText.includes("hello")) {
-        response = "Hello! 👋 Welcome to **Mad Commerce**. How can I help you find the perfect product today?";
-      } else if (lowerText.includes("product") || lowerText.includes("item")) {
-        response = "We have a wide range of products across Categories like **Men's Fashion**, **Women's Fashion**, **Jewellery**, and **Electronics**. Is there a specific category you're interested in?";
-      } else if (lowerText.includes("price") || lowerText.includes("cost")) {
-        response = "Our prices are very competitive! We curate only the best quality items at the best price points for our customers. 💸";
-      } else if (lowerText.includes("ship") || lowerText.includes("delivery")) {
-        response = "We offer **Free Shipping** on orders over $50! Standard delivery typically takes 3-5 business days.";
-      } else if (lowerText.includes("return") || lowerText.includes("refund")) {
-        response = "We have a hassle-free 30-day return policy. If you're not satisfied, we'll make it right!";
-      }
+    if (lowerText.includes("hi") || lowerText.includes("hello")) {
+      hardcodedResponse = "Hello! 👋 Welcome to **Mad Commerce**. How can I help you find the perfect product today?";
+    } else if (lowerText.includes("products") || lowerText.includes("item")) {
+      hardcodedResponse = "We have a wide range of products across Categories like **Men's Fashion**, **Women's Fashion**, **Jewellery**, and **Electronics**. Is there a specific category you're interested in?";
+    } else if (lowerText.includes("price") || lowerText.includes("cost")) {
+      hardcodedResponse = "Our prices are very competitive! We curate only the best quality items at the best price points for our customers. 💸";
+    } else if (lowerText.includes("shipping") || lowerText.includes("delivery")) {
+      hardcodedResponse = "We offer **Free Shipping** on orders over $50! Standard delivery typically takes 3-5 business days.";
+    } else if (lowerText.includes("return") || lowerText.includes("refund")) {
+      hardcodedResponse = "We have a hassle-free 30-day return policy. If you're not satisfied, we'll make it right!";
+    }
+
+    if (hardcodedResponse) {
+      setTimeout(async () => {
+        const assistantMsg = { role: "assistant", content: hardcodedResponse };
+        setMessages((prev) => [...prev, assistantMsg]);
+        setIsLoading(false);
+        await saveMessage(assistantMsg);
+      }, 800);
+      return;
+    }
+
+    // Gemini API integration
+    if (!genAI) {
+      // Fallback if no valid API key
+      setTimeout(async () => {
+        const assistantMsg = { role: "assistant", content: "I'm sorry, I didn't quite catch that. Could you please rephrase? (Note: Gemini API is not configured)" };
+        setMessages((prev) => [...prev, assistantMsg]);
+        setIsLoading(false);
+        await saveMessage(assistantMsg);
+      }, 800);
+      return;
+    }
+
+    try {
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      const chatHistory = messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+      }));
+
+      const chatSession = model.startChat({
+        history: chatHistory,
+      });
+
+      const result = await chatSession.sendMessage(text);
+      const response = result.response.text();
 
       const assistantMsg = { role: "assistant", content: response };
       setMessages((prev) => [...prev, assistantMsg]);
       setIsLoading(false);
-
-      // Persist assistant message
       await saveMessage(assistantMsg);
-    }, 800);
+
+    } catch (error) {
+      console.error("Gemini API Error details:", error);
+
+      // Fallback if gemini-1.5-flash is not found (common 404 issue in some regions/keys)
+      if (error.message?.includes("404") || error.message?.includes("not found")) {
+        try {
+          const fallbackModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+          const result = await fallbackModel.generateContent(text);
+          const response = result.response.text();
+
+          const assistantMsg = { role: "assistant", content: response + "\n\n*(Note: Falling back to Gemini Pro due to model availability issues)*" };
+          setMessages((prev) => [...prev, assistantMsg]);
+          setIsLoading(false);
+          await saveMessage(assistantMsg);
+          return;
+        } catch (fallbackError) {
+          console.error("Fallback Model Error:", fallbackError);
+        }
+      }
+
+      let errorMessage = "I'm having trouble connecting right now. Please try again later.";
+      const assistantMsg = { role: "assistant", content: errorMessage };
+      setMessages((prev) => [...prev, assistantMsg]);
+      setIsLoading(false);
+      await saveMessage(assistantMsg);
+    }
   };
 
 

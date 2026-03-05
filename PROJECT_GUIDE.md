@@ -14,6 +14,7 @@ This guide provides a comprehensive overview of the **Mad Commerce** project, ex
 - **Email Service**: [EmailJS](https://www.emailjs.com/) (Order confirmations & Contact form)
 - **Database**: [Supabase](https://supabase.com/) (ChatBot message persistence)
 - **Product API**: [Fakestore API](https://fakestoreapi.com/)
+- **AI Integration**: [Google Gemini API](https://ai.google.dev/) (Dynamic chatbot responses)
 
 ---
 
@@ -62,14 +63,16 @@ The project uses **React Router** for seamless page transitions. Unlike traditio
 - **Environment Variables**: Email service credentials are securely stored in `.env` file.
 
 ### 5. Smart ChatBot (`ChatBot.jsx`)
-The ChatBot is an interactive support assistant providing real-time help.
+The ChatBot is an interactive support assistant providing real-time help, powered by both local logic and Google's Gemini AI.
 - **Supabase Integration**: Chat messages are persisted to a Supabase database.
 - **Message Isolation & Privacy**: 
     - **Strict Filtering**: Messages are strictly filtered by either a `user_id` (for logged-in users) or a unique `session_id` (for guests persisted in `localStorage`).
     - **Privacy Guard**: The system prevents fetching or saving messages if no valid identity is present, ensuring that chat histories are isolated and private to each user/device.
-- **Mock Logic**: Uses a local logic engine for instant, relevant replies to common queries.
-- **Regex Detection**: Scans user input for keywords (like "shipping", "price", "hello") to trigger contextual help.
-- **UI/UX**: Features smooth animations using `framer-motion`, auto-scrolling, and a responsive floating design.
+- **Hybrid Response System**:
+    - **Fast Local Logic**: Instantly responds to common queries containing keywords like "shipping", "price", or "returns" using predefined responses for immediate help.
+    - **Gemini AI Integration**: Uses the `@google/generative-ai` SDK to dynamically answer open-ended questions using the `gemini-2.5-flash` model, falling back to `gemini-pro` if needed.
+    - **Context Awareness**: Passes the entire conversation history to the Gemini API, allowing the AI to maintain context across multiple messages.
+- **UI/UX**: Features smooth animations using `framer-motion`, auto-scrolling, loading indicators, and a responsive floating design.
 
 ### 6. Newsletter Subscription (`Footer.jsx`)
 - **Interactive UI**: Users can subscribe to updates directly from the footer.
