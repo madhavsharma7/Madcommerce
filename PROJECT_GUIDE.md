@@ -1,4 +1,4 @@
-# Mad Commerce - Project Documentation
+# Mad Commerce - Project Documentation Guide
 
 This guide provides a comprehensive overview of the **Mad Commerce** project, explaining its architecture, tech stack, and how the core components work together.
 
